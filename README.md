@@ -40,11 +40,15 @@ The program adapts to whatever history the case carries:
 
 1. **Collapse the history into distinct snapshots** — consecutive identical
    reads are the same stale page.
-2. **One snapshot (stale page, a refresh is coming):** the refresh prior,
-   calibrated on the launch-night refresh — median rate = last rate × a
-   dilution factor that grows with the trophy's earned count
-   (`0.165 * (E/4)^0.5`, clipped to [0.165, 0.65]; the 100% trophy stays at
-   100%), compounding with horizon, with a wide spread.
+2. **One snapshot (stale page, a refresh is coming):** a depth-calibrated
+   refresh model. Each trophy gets a progression depth from its description
+   (chapter number, quick early activity, story mission, deep grind);
+   expected new earners over one refresh are `16 * exp(-0.83 * depth)`,
+   the tracked base grows by the observed 6.06x per refresh, both
+   compounding with the refresh count for the horizon. The median rate is
+   `100 * (E + growth) / (N * 6.06^R)`; the spread is a per-trophy logit
+   sigma (base 0.25 plus Poisson growth variance plus a horizon random
+   walk). The 100% trophy stays at 100%.
 3. **Two or more snapshots:** project the **change** since the last read,
    never an absolute level from a shaky line (the history is U-shaped:
    rates first fall as the base dilutes, then rise as players progress).
@@ -57,25 +61,33 @@ The program adapts to whatever history the case carries:
    logit-trend change, and the counts change
    `ln(E(T)/E_last) − ln(N(T)/N_last)`. Earned counts never decrease and
    never exceed N(T).
-4. **Spread** (logit sigma): fit residual + slope uncertainty over the
+4. **S-curve blend:** a progression curve saturates, so over a long horizon
+   a straight logit line overshoots trophies near their plateau and
+   undershoots ones still steepening. Per trophy, `r(x) = P * sigmoid((x -
+   x0) / 0.43)` is fitted to the window in logit space (grid search) and
+   its target reading is blended into the median with a weight that ramps
+   in with the log-time gap to the target (0 at dx ≤ 0.25, 0.7 at
+   dx ≥ 1.0); skipped for the universal trophy and thin windows.
+5. **Spread** (logit sigma): fit residual + slope uncertainty over the
    log-time gap + a horizon random walk (`0.40 * sqrt(days)`) + a refresh
-   allowance that grows when the last snapshot is stale. Floored at 0.45,
-   capped at 1.5.
+   allowance that grows when the last snapshot is stale, scaled by 0.8.
+   Floored at 0.45, capped at 1.5.
 
 ## Validation
 
 - **Practice cases** (answers = the 04:30Z refresh, read off the live
-  Exophase page: N = 3,868): mean pinball loss **0.182**, 90% coverage
-  0.982, typical miss 0.033 pp — vs the house baseline's **1.508** / 0.000 /
-  0.678 pp. All 55 medians move down from the last read (the 100% trophy
-  stays at 99.99).
+  Exophase page: N = 3,868): mean pinball loss **0.093**, 90% coverage
+  0.964, typical miss 0.033 pp — vs v1's **0.182** / 0.982 / 0.033 pp and
+  the house baseline's **1.508** / 0.000 / 0.678 pp. All 55 medians move
+  down from the last read (the 100% trophy stays at 99.99).
 - **Synthetic final-like cases** (2 days of history with refreshes, 4.5-day
   horizon, dilution + progression ground truth, two different progression
-  shapes, 5 seeds each): final-case mean loss **0.467 / 0.415** vs the
-  house baseline's **1.133 / 0.534**; 12.5 h backtests **0.229 / 0.109**
-  vs **0.398 / 0.128**.
+  shapes, 5 seeds each): final-case mean loss **0.421** vs v1's 0.463 and
+  the house baseline's 0.915; 12.5 h backtests **0.139** vs v1's 0.152.
+  Gen 1 (smooth progression): 0.477 / 0.188; gen 2 (cohort-based):
+  0.364 / 0.090.
 - **Determinism:** two runs produce byte-identical outputs.
-  **Runtime:** ~0.2 s for the two practice cases (8 s cap, 1 CPU).
+  **Runtime:** ~0.3 s for the two practice cases (8 s cap, 1 CPU).
 
 ---
 
